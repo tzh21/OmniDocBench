@@ -82,8 +82,8 @@ def main():
                         help='基础配置文件路径')
     parser.add_argument('--filter', type=str, default=None,
                         help='过滤目录名，只评估包含该字符串的目录')
-    parser.add_argument('--workers', '-w', type=int, default=4,
-                        help='并行worker数量 (默认: 4)')
+    parser.add_argument('--workers', '-w', type=int, default=8,
+                        help='并行worker数量')
     parser.add_argument('--sequential', action='store_true',
                         help='顺序执行（不并行）')
     args = parser.parse_args()
