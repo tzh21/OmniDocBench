@@ -75,10 +75,10 @@ def run_single_evaluation(args_tuple):
 def main():
     parser = argparse.ArgumentParser(description='批量评估脚本（支持并行）')
     parser.add_argument('--saved_outputs', type=str, 
-                        default='/export/home/tangzihan.15/fast-ocr/local/saved_outputs',
+                        default='~/fast-ocr/local/saved_outputs',
                         help='saved_outputs 目录路径')
     parser.add_argument('--config', '-c', type=str, 
-                        default='./configs/end2end.yaml',
+                        default='./configs/fastocr_end2end.yaml',
                         help='基础配置文件路径')
     parser.add_argument('--filter', type=str, default=None,
                         help='过滤目录名，只评估包含该字符串的目录')
@@ -89,7 +89,7 @@ def main():
     args = parser.parse_args()
     
     # 获取所有需要评估的目录
-    saved_outputs_dir = args.saved_outputs
+    saved_outputs_dir = os.path.expanduser(args.saved_outputs)
     all_dirs = sorted([d for d in os.listdir(saved_outputs_dir) 
                        if os.path.isdir(os.path.join(saved_outputs_dir, d))])
     
