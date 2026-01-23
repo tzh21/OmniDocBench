@@ -80,8 +80,8 @@ def main():
     parser.add_argument('--config', '-c', type=str, 
                         default='./configs/fastocr_end2end.yaml',
                         help='基础配置文件路径')
-    parser.add_argument('--filter', type=str, default=None,
-                        help='过滤目录名，只评估包含该字符串的目录')
+    parser.add_argument('--filters', type=str, nargs='+', default=None,
+                        help='过滤目录名，只评估包含任一字符串的目录（取并集）')
     parser.add_argument('--workers', '-w', type=int, default=8,
                         help='并行worker数量')
     parser.add_argument('--sequential', action='store_true',
@@ -94,8 +94,8 @@ def main():
                        if os.path.isdir(os.path.join(saved_outputs_dir, d))])
     
     # 应用过滤器
-    if args.filter:
-        all_dirs = [d for d in all_dirs if args.filter in d]
+    if args.filters:
+        all_dirs = [d for d in all_dirs if any(filter_str in d for filter_str in args.filters)]
     
     # 准备任务列表
     tasks = []
