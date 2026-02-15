@@ -74,13 +74,12 @@ def run_single_evaluation(args_tuple):
 
 def main():
     parser = argparse.ArgumentParser(description='批量评估脚本（支持并行）')
-    parser.add_argument('--saved_outputs', type=str, 
-                        default='~/fast-ocr/local/saved_outputs',
+    parser.add_argument('saved_outputs', type=str,
                         help='saved_outputs 目录路径')
     parser.add_argument('--config', '-c', type=str, 
                         default='./configs/fastocr_end2end.yaml',
                         help='基础配置文件路径')
-    parser.add_argument('--filters', type=str, nargs='+', default=None,
+    parser.add_argument('--filters', '-f', type=str, nargs='+', default=None,
                         help='过滤目录名，只评估包含任一字符串的目录（取并集）')
     parser.add_argument('--workers', '-w', type=int, default=8,
                         help='并行worker数量')

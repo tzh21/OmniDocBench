@@ -47,12 +47,17 @@ def get_gt_pred_lines(gt_mix,pred_dataset_mix,line_type):
             elif line_type == 'text':
                 gt_lines.append(str(item['text']))
             elif line_type == 'html_table':
-                gt_lines.append(str(item['html']))
+                html_val = item.get('html') or item.get('content', '')
+                gt_lines.append(str(html_val))
+                norm_html_lines.append(str(html_val))
             elif line_type == 'formula':
-                gt_lines.append(str(item['latex']))
+                gt_lines.append(str(item.get('latex', '')))
             elif line_type == 'latex_table':
-                gt_lines.append(str(item['latex']))
-                norm_html_lines.append(str(item['html']))
+                # 兼容只有 html 没有 latex 的 GT
+                latex_val = item.get('latex') or item.get('content', '')
+                html_val = item.get('html') or item.get('content', '')
+                gt_lines.append(str(latex_val))
+                norm_html_lines.append(str(html_val))
         
         pred_lines = [str(item['content']) for item in pred_dataset_mix]
         if line_type == 'formula':
