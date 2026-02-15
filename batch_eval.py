@@ -2,10 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 批量评估脚本（支持并行）
-遍历 saved_outputs 下的所有目录，找到 *_md 子目录进行评估
+遍历 saved_outputs 下的所有目录，找到固定子目录 ocr_results_md 进行评估，
+结果 JSON 以一级目录名命名。
 """
 
 import os
+
+# 预测结果子目录固定名称
+MD_SUBDIR_NAME = 'ocr_results_md'
 import sys
 import yaml
 import io
@@ -17,13 +21,10 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import cpu_count
 
 
-def find_md_subdir(parent_dir):
-    """查找目录下的 *_md 子目录"""
-    for item in os.listdir(parent_dir):
-        item_path = os.path.join(parent_dir, item)
-        if os.path.isdir(item_path) and item.endswith('_md'):
-            return item_path
-    return None
+def find_md_subdir(parent_dir, subdir_name=MD_SUBDIR_NAME):
+    """查找目录下指定名称的子目录（默认 ocr_results_md）"""
+    md_path = os.path.join(parent_dir, subdir_name)
+    return md_path if os.path.isdir(md_path) else None
 
 
 def run_single_evaluation(args_tuple):
@@ -57,7 +58,8 @@ def run_single_evaluation(args_tuple):
             val_dataset = DATASET_REGISTRY.get(dataset_name)(config[task_name])
             val_task = EVAL_TASK_REGISTRY.get(task_name)
             
-            save_name = os.path.basename(md_dir) + '_' + config[task_name]['dataset'].get('match_method', 'quick_match')
+            # 结果 JSON 以一级目录名（dir_name）命名
+            save_name = dir_name + '_' + config[task_name]['dataset'].get('match_method', 'quick_match')
             print(f'[{dir_name}] Processing: {save_name}')
             
             if config[task_name]['dataset']['ground_truth'].get('page_info'):
@@ -103,7 +105,7 @@ def main():
         md_dir = find_md_subdir(dir_path)
         
         if md_dir is None:
-            print(f"跳过 {dir_name}: 未找到 *_md 子目录")
+            print(f"跳过 {dir_name}: 未找到 {MD_SUBDIR_NAME} 子目录")
             continue
         
         tasks.append((dir_name, md_dir, os.path.abspath(args.config)))
