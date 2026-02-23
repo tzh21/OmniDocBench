@@ -89,6 +89,9 @@ def main():
                         help='顺序执行（不并行）')
     args = parser.parse_args()
     
+    # 确保 result 目录存在
+    os.makedirs('./result', exist_ok=True)
+
     # 获取所有需要评估的目录
     saved_outputs_dir = os.path.expanduser(args.saved_outputs)
     all_dirs = sorted([d for d in os.listdir(saved_outputs_dir) 
