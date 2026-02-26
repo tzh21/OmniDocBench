@@ -88,33 +88,65 @@ def main():
                         help='并行worker数量')
     parser.add_argument('--sequential', action='store_true',
                         help='顺序执行（不并行）')
+    parser.add_argument('--merge', action='store_true',
+                        help='合并模式：不清空 result 目录，并跳过 result 中已有结果的数据点')
     args = parser.parse_args()
-    
-    # 测试前清空 result 目录，再确保目录存在
+
     result_dir = './result'
-    if os.path.isdir(result_dir):
-        shutil.rmtree(result_dir)
-    os.makedirs(result_dir, exist_ok=True)
+    if args.merge:
+        # 合并模式：不清空 result，仅确保目录存在
+        os.makedirs(result_dir, exist_ok=True)
+    else:
+        # 测试前清空 result 目录，再确保目录存在
+        if os.path.isdir(result_dir):
+            shutil.rmtree(result_dir)
+        os.makedirs(result_dir, exist_ok=True)
 
     # 获取所有需要评估的目录
     saved_outputs_dir = os.path.expanduser(args.saved_outputs)
-    all_dirs = sorted([d for d in os.listdir(saved_outputs_dir) 
+    all_dirs = sorted([d for d in os.listdir(saved_outputs_dir)
                        if os.path.isdir(os.path.join(saved_outputs_dir, d))])
-    
+
     # 应用过滤器
     if args.filters:
         all_dirs = [d for d in all_dirs if any(filter_str in d for filter_str in args.filters)]
-    
+
+    # 合并模式下：预加载 config，用于判断某目录的预期结果文件是否已存在
+    expected_save_names_per_dir = None
+    if args.merge:
+        with io.open(os.path.abspath(args.config), "r", encoding="utf-8") as f:
+            merge_config = yaml.load(f, Loader=yaml.FullLoader)
+        expected_save_names_per_dir = {}
+        for task_name in merge_config.keys():
+            if not merge_config.get(task_name):
+                continue
+            match_method = merge_config[task_name]['dataset'].get('match_method', 'quick_match')
+            # 仅用于判断“某 dir 会生成哪些 save_name”，不依赖具体 dir，只记后缀
+            expected_save_names_per_dir[task_name] = match_method
+
     # 准备任务列表
     tasks = []
     for dir_name in all_dirs:
         dir_path = os.path.join(saved_outputs_dir, dir_name)
         md_dir = find_md_subdir(dir_path)
-        
+
         if md_dir is None:
             print(f"跳过 {dir_name}: 未找到 {MD_SUBDIR_NAME} 子目录")
             continue
-        
+
+        if args.merge and expected_save_names_per_dir is not None:
+            # 检查该目录对应的所有预期结果文件是否都已存在
+            all_exist = True
+            for task_name, match_method in expected_save_names_per_dir.items():
+                save_name = dir_name + '_' + match_method
+                result_file = os.path.join(result_dir, save_name + '_metric_result.json')
+                if not os.path.isfile(result_file):
+                    all_exist = False
+                    break
+            if all_exist:
+                print(f"跳过 {dir_name}: result 中已有完整结果")
+                continue
+
         tasks.append((dir_name, md_dir, os.path.abspath(args.config)))
     
     print(f"找到 {len(tasks)} 个目录需要评估")
