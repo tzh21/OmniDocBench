@@ -7,6 +7,7 @@
 """
 
 import os
+import shutil
 
 # 预测结果子目录固定名称
 MD_SUBDIR_NAME = 'ocr_results_md'
@@ -89,8 +90,11 @@ def main():
                         help='顺序执行（不并行）')
     args = parser.parse_args()
     
-    # 确保 result 目录存在
-    os.makedirs('./result', exist_ok=True)
+    # 测试前清空 result 目录，再确保目录存在
+    result_dir = './result'
+    if os.path.isdir(result_dir):
+        shutil.rmtree(result_dir)
+    os.makedirs(result_dir, exist_ok=True)
 
     # 获取所有需要评估的目录
     saved_outputs_dir = os.path.expanduser(args.saved_outputs)
