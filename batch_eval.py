@@ -7,6 +7,7 @@
 """
 
 import os
+import re
 import shutil
 
 # 预测结果子目录固定名称
@@ -20,6 +21,14 @@ import copy
 from glob import glob
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import cpu_count
+
+
+def move_timestamp_to_end(name):
+    """若名称以 MMDD-HHMMSS_ 开头，返回 (新名称, True)；否则返回 (原名称, False)"""
+    m = re.match(r'^(\d{4}-\d{6})_(.+)$', name)
+    if m:
+        return f"{m.group(2)}_{m.group(1)}", True
+    return name, False
 
 
 def find_md_subdir(parent_dir, subdir_name=MD_SUBDIR_NAME):
@@ -104,6 +113,19 @@ def main():
 
     # 获取所有需要评估的目录
     saved_outputs_dir = os.path.expanduser(args.saved_outputs)
+    # 先将名称以时间戳开头的子目录重命名，把时间戳移到最后（MMDD-HHMMSS_xxx -> xxx_MMDD-HHMMSS）
+    for d in list(os.listdir(saved_outputs_dir)):
+        full_path = os.path.join(saved_outputs_dir, d)
+        if not os.path.isdir(full_path):
+            continue
+        new_name, need_rename = move_timestamp_to_end(d)
+        if need_rename and new_name != d:
+            new_path = os.path.join(saved_outputs_dir, new_name)
+            if not os.path.exists(new_path):
+                os.rename(full_path, new_path)
+                print(f"重命名: {d} -> {new_name}")
+            else:
+                print(f"跳过重命名 {d}: 目标 {new_name} 已存在")
     all_dirs = sorted([d for d in os.listdir(saved_outputs_dir)
                        if os.path.isdir(os.path.join(saved_outputs_dir, d))])
 
@@ -197,6 +219,14 @@ def main():
     
     print(f"\n成功: {success_count}, 失败: {fail_count}")
     print(f"结果保存在 ./result/ 目录下")
+
+    # 将结果目录复制到 local/<saved_outputs 的目录名>，若已存在则合并（覆盖已有、保留未有）
+    local_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'local')
+    os.makedirs(local_base, exist_ok=True)
+    output_dir_name = os.path.basename(os.path.normpath(saved_outputs_dir))
+    target_dir = os.path.join(local_base, output_dir_name)
+    shutil.copytree(result_dir, target_dir, dirs_exist_ok=True)
+    print(f"结果已复制/合并到: {target_dir}")
 
 
 if __name__ == '__main__':
