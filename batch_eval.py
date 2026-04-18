@@ -9,6 +9,7 @@
 import os
 import re
 import shutil
+import json
 
 # 预测结果子目录固定名称
 MD_SUBDIR_NAME = 'ocr_results_md'
@@ -19,6 +20,10 @@ import pathlib
 import argparse
 import copy
 from glob import glob
+
+import numpy as np
+import pandas as pd
+
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import cpu_count
 
@@ -82,6 +87,129 @@ def run_single_evaluation(args_tuple):
     except Exception as e:
         import traceback
         return (dir_name, "失败", str(e))
+
+
+def load_match_method_from_config(config_path):
+    """从 YAML 中取第一个启用任务的 match_method（与评测命名一致）。"""
+    with io.open(os.path.abspath(config_path), "r", encoding="utf-8") as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    for task_name in config.keys():
+        if not config.get(task_name):
+            continue
+        return config[task_name]["dataset"].get("match_method", "quick_match")
+    return "quick_match"
+
+
+def extract_result_prefixes(result_folder, match_name):
+    """从 result 目录下的文件名中提取前缀（与 generate_result_tables.ipynb 一致）。"""
+    if not os.path.isdir(result_folder):
+        return []
+    prefixes = set()
+    pattern = re.compile(rf"^(.+?)_{re.escape(match_name)}_.*\.json$")
+    for filename in os.listdir(result_folder):
+        m = pattern.match(filename)
+        if m:
+            prefixes.add(m.group(1))
+    return sorted(prefixes)
+
+
+def is_nan_like(v):
+    if pd.isna(v):
+        return True
+    if isinstance(v, str) and str(v).strip().upper() in ("NAN", "N/A", "NA"):
+        return True
+    return False
+
+
+def build_omni_score_markdown(result_folder, match_name):
+    """
+    汇总各 run 的 metric JSON，生成与 tools/generate_result_tables.ipynb 中
+    overall 段相同的指标表（Markdown）。
+    """
+    prefix_list = extract_result_prefixes(result_folder, match_name)
+    if not prefix_list:
+        return (
+            f"未在 `{result_folder}` 下找到匹配 `{match_name}` 的 `*_metric_result.json`，"
+            "未生成指标表。\n"
+        )
+
+    dict_list = []
+    for ocr_type in prefix_list:
+        result_path = os.path.join(
+            result_folder, f"{ocr_type}_{match_name}_metric_result.json"
+        )
+        with open(result_path, "r", encoding="utf-8") as f:
+            result = json.load(f)
+
+        save_dict = {}
+        for category_type, metric in [
+            ("text_block", "Edit_dist"),
+            ("display_formula", "Edit_dist"),
+            ("table", "TEDS"),
+            ("reading_order", "Edit_dist"),
+        ]:
+            if metric in ("TEDS", "TEDS_structure_only"):
+                if result[category_type]["page"].get(metric):
+                    save_dict[category_type + "_" + metric] = (
+                        result[category_type]["page"][metric]["ALL"] * 100
+                    )
+                else:
+                    save_dict[category_type + "_" + metric] = 0
+            else:
+                save_dict[category_type + "_" + metric] = result[category_type][
+                    "all"
+                ][metric].get("ALL_page_avg", np.nan)
+
+        dict_list.append(save_dict)
+
+    df = pd.DataFrame(dict_list, index=prefix_list)
+
+    overall_cols = [
+        "text_block_Edit_dist",
+        "display_formula_Edit_dist",
+        "table_TEDS",
+        "reading_order_Edit_dist",
+    ]
+    nan_reports = []
+    for col in overall_cols:
+        if col not in df.columns:
+            continue
+        for idx in df.index:
+            v = df.loc[idx, col]
+            if is_nan_like(v):
+                nan_reports.append((idx, col, repr(v)))
+
+    lines = []
+    if nan_reports:
+        lines.append("【存在 NaN 的指标与数据集】\n")
+        for dataset, col, raw in nan_reports:
+            lines.append(f"- 数据集: `{dataset}`  列: `{col}`  原始值: {raw}\n")
+        lines.append("\n")
+
+    for col in overall_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.round(3)
+    df["overall"] = (
+        (1 - df["text_block_Edit_dist"]) * 100
+        + (1 - df["display_formula_Edit_dist"]) * 100
+        + df["table_TEDS"]
+        + (1 - df["reading_order_Edit_dist"]) * 100
+    ) / 4
+
+    lines.append(df.to_markdown())
+    lines.append("\n")
+    return "".join(lines)
+
+
+def write_omni_score_md(result_folder, saved_outputs_dir, config_path):
+    """将 OmniDocBench overall 表写入 saved_outputs 目录下的 omni_scores.md。"""
+    match_name = load_match_method_from_config(config_path)
+    md_body = build_omni_score_markdown(result_folder, match_name)
+    out_path = os.path.join(saved_outputs_dir, "omni_scores.md")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(md_body)
+    return out_path
 
 
 def main():
@@ -219,6 +347,12 @@ def main():
     
     print(f"\n成功: {success_count}, 失败: {fail_count}")
     print(f"结果保存在 ./result/ 目录下")
+
+    try:
+        omni_md_path = write_omni_score_md(result_dir, saved_outputs_dir, args.config)
+        print(f"已生成 Markdown 汇总表: {omni_md_path}")
+    except Exception as e:
+        print(f"生成 omni_scores.md 时出错（评测结果可能不完整）: {e}")
 
     # 将结果目录复制到 local/<saved_outputs 的目录名>，若已存在则合并（覆盖已有、保留未有）
     local_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'local')
